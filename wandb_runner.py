@@ -1,0 +1,156 @@
+import argparse
+import wandb
+import torch
+from torch.utils.data import DataLoader
+from utils import collate_fn, LangDataset,devnagri2int,latinList2int
+from model import EncoderRNN, DecoderRNN, AttnDecoderRNN
+from train import train
+
+def sweep_config(best_config=False):
+    """Define the configuration for hyperparameter sweep"""
+    base_params = {
+        "embed_size": {"values": [128, 256, 512]},
+        "num_layers": {"values": [2, 3, 4]},
+        "layer": {"values": ["lstm", "rnn", "gru"]},
+        "hidden_size": {"values": [128, 256, 512]},
+        "batch_size": {"values": [32, 64]},
+        "learning_rate": {"values": [1e-4, 1e-3, 1e-2]},
+        "dropout_p": {"values": [0.3, 0.4, 0.5]},
+        "activation": {"values": ["tanh"]},
+        "teacher_forcing_prob": {"values": [0.5, 0.7, 0.9]},
+        "beam_width": {"values": [1, 2, 4]},
+        "num_epochs": {"values": [6]}
+    }
+
+    if not best_config:
+        return {
+            "method": "bayes",
+            "metric": {"name": "val_accuracy", "goal": "maximize"},
+            "parameters": base_params
+        }
+    else:
+        # Fix to best-known values
+        fixed = {k: {"values": [v["values"][-1]]} for k, v in base_params.items()}
+        return {
+            "method": "bayes",
+            "metric": {"name": "val_accuracy", "goal": "maximize"},
+            "parameters": fixed
+        }
+
+
+def wandb_train(attention=False):
+    """Main training function for a wandb run"""
+    # Initialize wandb
+    run = wandb.init()
+    config = run.config
+
+    # Set device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Prepare data loaders using config.batch_size
+    train_dataset,val_dataset = LangDataset("train"),LangDataset("val")
+    train_loader = DataLoader(train_dataset, batch_size=config.batch_size,
+                              shuffle=True, collate_fn=collate_fn)
+    val_loader = DataLoader(val_dataset, batch_size=config.batch_size,
+                            shuffle=False, collate_fn=collate_fn)
+
+    # Instantiate models
+    encoder = EncoderRNN(
+        vocab_size=len(latinList2int),
+        embed_size=config.embed_size,
+        hidden_size=config.hidden_size,
+        num_layers=config.num_layers,
+        layer=config.layer,
+        dropout_p=config.dropout_p
+    ).to(device)
+    if attention:
+        decoder = AttnDecoderRNN(
+            vocab_size=len(devnagri2int),
+            embed_size=config.embed_size,
+            hidden_size=config.hidden_size,
+            num_layers=config.num_layers,
+            layer=config.layer
+        ).to(device)
+    else:
+        decoder = DecoderRNN(
+            vocab_size=len(devnagri2int),
+            embed_size=config.embed_size,
+            hidden_size=config.hidden_size,
+            num_layers=config.num_layers,
+            layer=config.layer
+        ).to(device)
+
+    # Call your training loop
+    train(train_loader, val_loader,encoder, decoder, 
+          n_epochs=config.num_epochs, learning_rate=config.learning_rate,
+          teacher_forcing_prob=config.teacher_forcing_prob,beam_width=config.beam_width,
+          print_every=1, plot_every=10,iswandb=True)
+    # train(train_dataloader, val_dataloader,encoder, decoder, n_epochs=2, learning_rate=0.001)
+    # Finish wandb run
+    run.finish()
+
+
+def run_sweep(args,sweep_id=None, best_config=False):
+    """Create or run a wandb sweep."""
+    if args.wandb_sweeps:
+        if sweep_id is None:
+            sweep_id = wandb.sweep(sweep_config(best_config), project="transliteration-sweep")
+        wandb.agent(sweep_id, function = lambda: wandb_train(args.attention), count=1 if best_config else 15)
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        train_dataset,val_dataset = LangDataset("train"),LangDataset("val")
+        train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
+                                shuffle=True, collate_fn=collate_fn)
+        val_loader = DataLoader(val_dataset, batch_size=args.batch_size,
+                                shuffle=False, collate_fn=collate_fn)
+
+        encoder = EncoderRNN(
+            vocab_size=len(latinList2int),
+            embed_size=args.embed_size,
+            hidden_size=args.hidden_size,
+            num_layers=args.num_layers,
+            layer=args.layer,
+            dropout_p=args.dropout_p
+        ).to(device)
+        if args.attention:
+            decoder = AttnDecoderRNN(
+                vocab_size=len(devnagri2int),
+                embed_size=args.embed_size,
+                hidden_size=args.hidden_size,
+                num_layers=args.num_layers,
+                layer=args.layer
+            ).to(device)
+        else:
+            decoder = DecoderRNN(
+                vocab_size=len(devnagri2int),
+                embed_size=args.embed_size,
+                hidden_size=args.hidden_size,
+                num_layers=args.num_layers,
+                layer=args.layer
+            ).to(device)
+
+    # Call your training loop
+    train(train_loader, val_loader,encoder, decoder, 
+          n_epochs=args.num_epochs, learning_rate=args.learning_rate,
+          teacher_forcing_prob=args.teacher_forcing_prob,beam_width=args.beam_width,
+          print_every=1, plot_every=10,iswandb=True)
+
+if __name__ == "__main__":
+    # take arguments from command line
+    parser = argparse.ArgumentParser(description="Run a wandb sweep for hyperparameter tuning.")
+    parser.add_argument("--sweep_id", type=str, default=None, help="Sweep ID to run.")
+    parser.add_argument('--attention', dest='attention', action='store_true', help='runs Attn Decoder')
+    parser.add_argument('--wandb_sweeps', dest='wandb_sweeps', action='store_true', help='want wandb swweps to tune parameters?')
+    parser.add_argument("--embed_size", type=int, default=256, help="Size of embedding vector")
+    parser.add_argument("--num_layers", type=int, default=2, help="Number of layers in the RNN")
+    parser.add_argument("--layer", type=str, default="lstm", help="Type of RNN layer (lstm, rnn, gru)")
+    parser.add_argument("--hidden_size", type=int, default=256, help="Size of hidden state")
+    parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
+    parser.add_argument("--learning_rate", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument("--dropout_p", type=float, default=0.5, help="Dropout probability")
+    parser.add_argument("--activation", type=str, default="tanh", help="Activation function")
+    parser.add_argument("--teacher_forcing_prob", type=float, default=0.5, help="Teacher forcing probability")
+    parser.add_argument("--beam_width", type=int, default=1, help="Beam width for beam search")
+    parser.add_argument("--num_epochs", type=int, default=20, help="Number of epochs")
+    args = parser.parse_args()
+    run_sweep(args=args)
