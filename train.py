@@ -132,9 +132,9 @@ def evaluate_model(encoder, decoder, dataloader, int2devnagri, devnagri2int,
     Evaluate the model on the given dataloader."""
 
     # set Devanagari font
-    font_path = 'C:/Users/aksha/Downloads/Noto_Sans_Devanagari/NotoSansDevanagari-VariableFont_wdth,wght.ttf'
-    font_manager.fontManager.addfont(font_path)
-    plt.rcParams['font.family'] = 'Noto Sans Devanagari'
+    # font_path = 'C:/Users/aksha/Downloads/Noto_Sans_Devanagari/NotoSansDevanagari-VariableFont_wdth,wght.ttf'
+    # font_manager.fontManager.addfont(font_path)
+    # plt.rcParams['font.family'] = 'Noto Sans Devanagari'
 
     encoder.eval()
     decoder.eval()
