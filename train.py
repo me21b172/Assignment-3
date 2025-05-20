@@ -26,16 +26,18 @@ SOS_TOKEN = "<SOS>"
 EOS_TOKEN = "<EOS>"
 
 def create_spaced_attention_view(attention_data, words_per_line=3, num_words=12):
-    # Select sample data
+    """
+    Create a wide-spaced attention view for the given attention data.
+    """
     samples = random.sample(attention_data, min(num_words, len(attention_data)))
     
     # Create figure
     fig = go.Figure()
     
     # Spacing configuration
-    char_spacing = 15  # Increased from 5 to 15 (3x more)
-    word_spacing = 60  # Increased from 20 to 60 (3x more)
-    line_spacing = 8   # Vertical space between lines
+    char_spacing = 15
+    word_spacing = 60  
+    line_spacing = 8   
     
     num_lines = (len(samples) + words_per_line - 1) // words_per_line
     
@@ -126,6 +128,8 @@ def evaluate_model(encoder, decoder, dataloader, int2devnagri, devnagri2int,
                    device, teacher_forcing_prob, beam_width,
                    show_confusion=True, iswandb=False,
                    best_config=False, attention=False):
+    """
+    Evaluate the model on the given dataloader."""
 
     # set Devanagari font
     font_path = 'C:/Users/aksha/Downloads/Noto_Sans_Devanagari/NotoSansDevanagari-VariableFont_wdth,wght.ttf'
@@ -318,6 +322,7 @@ def evaluate_model(encoder, decoder, dataloader, int2devnagri, devnagri2int,
 
 
 def train_epoch(dataloader, encoder, decoder, encoder_optimizer, decoder_optimizer):
+    """Train the model for one epoch."""
     total_loss = 0
     for data in dataloader:
         _, _, input_tensor, target_tensor, input_lengths, target_lengths = data
@@ -353,6 +358,7 @@ def train_epoch(dataloader, encoder, decoder, encoder_optimizer, decoder_optimiz
     return total_loss / len(dataloader)
 
 def masked_cross_entropy(logits, target, pad_idx):
+    """Compute the masked cross-entropy loss."""
     # logits: (batch_size, seq_len, vocab_size)
     # target: (batch_size, seq_len)
     mask = (target != pad_idx).float()
@@ -364,6 +370,8 @@ def masked_cross_entropy(logits, target, pad_idx):
     return loss
 
 def train_model(train_dataloader, val_dataloader,encoder, decoder, n_epochs, teacher_forcing_prob,beam_width,learning_rate=0.001,print_every=1, plot_every=100,iswandb=False,best_config = False,attention=False):
+    """
+    Train the model with the given parameters."""
     encoder.train() 
     decoder.train()
     start = time.time()

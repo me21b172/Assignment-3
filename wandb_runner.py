@@ -85,6 +85,7 @@ def wandb_train(attention=False, best_config= False):
     ).to(device)
 
     if attention:
+        """Attention Decoder"""
         print("YEs Attention!!")
         decoder = AttnDecoderRNN(
             vocab_size=len(devnagri2int),
@@ -107,7 +108,6 @@ def wandb_train(attention=False, best_config= False):
           n_epochs=config.num_epochs, learning_rate=config.learning_rate,
           teacher_forcing_prob=config.teacher_forcing_prob,beam_width=config.beam_width,
           print_every=1, plot_every=10,iswandb=True,best_config=best_config,attention=attention)
-    # train(train_dataloader, val_dataloader,encoder, decoder, n_epochs=2, learning_rate=0.001)
     # Finish wandb run
     run.finish()
 
@@ -127,6 +127,7 @@ def run_sweep(args,sweep_id=None):
         val_loader = DataLoader(val_dataset, batch_size=args.batch_size,
                                 shuffle=False, collate_fn=collate_fn)
 
+        # Instantiate models
         encoder = EncoderRNN(
             vocab_size=len(latinList2int),
             embed_size=args.embed_size,

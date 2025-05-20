@@ -28,6 +28,7 @@ if torch.cuda.is_available():
     torch.backends.cudnn.benchmark = False
 
 
+# Load the lexicon data
 types = {"train":'hi.translit.sampled.train.tsv',"val":'hi.translit.sampled.dev.tsv',"test":"hi.translit.sampled.test.tsv"}
 with open(os.path.join("lexicons/",types["train"]), "r", encoding="utf-8") as f:
     lines = f.readlines()
@@ -44,6 +45,8 @@ merged_data = np.concatenate((train_data,val_data))
 
 
 class LangDataset(Dataset):
+    """
+    Dataset for Latin and Devanagari words."""
     def __init__(self,type:str):
         types = {"train":train_data,"val":val_data,"test":test_data, "test_ponit":test_data_point}
         data = types[type]
@@ -55,6 +58,7 @@ class LangDataset(Dataset):
             self.Y_encoded.append(tokenise(word[0],devnagri2int))
         
     def __getitem__(self, idx):
+        """Return a single item from the dataset."""
         latin_word= self.X[idx]
         devnagri_word = self.Y[idx]
         latin_tensor = self.X_encoded[idx]
@@ -67,12 +71,16 @@ class LangDataset(Dataset):
     
 # Update the function to create mappings to include the special tokens
 def create_mappings(vocab):
+    """
+    Create mappings from words to integers and vice versa."""
     vocab = [PAD_TOKEN, SOS_TOKEN, EOS_TOKEN, UNK_TOKEN] + sorted(vocab)
     word2int = {word: i for i, word in enumerate(vocab)}
     int2word = {i: word for word, i in word2int.items()}
     return word2int, int2word
 
 def wordEncoder(words,encodelist):
+    """
+    Encode words into a tensor using one-hot encoding."""
     n_letters = len(encodelist)
     tensor = torch.zeros(len(words), n_letters)
     for i,word in enumerate(words):
@@ -80,14 +88,18 @@ def wordEncoder(words,encodelist):
     return tensor
     
 def tokenise(word, wordMap):
+    """
+    Tokenize a word into a tensor using the provided word map."""
     return torch.tensor([wordMap[SOS_TOKEN]] + [wordMap[letter] for letter in word] + [wordMap[EOS_TOKEN]], dtype=torch.long)
 
 def asMinutes(s):
+    """Convert seconds to minutes and seconds."""
     m = math.floor(s / 60)
     s -= m * 60
     return '%dm %ds' % (m, s)
 
 def timeSince(since, percent):
+    """Return a string representing the elapsed time since a given time."""
     now = time.time()
     s = now - since
     es = s / (percent)
@@ -95,6 +107,7 @@ def timeSince(since, percent):
     return '%s (- %s)' % (asMinutes(s), asMinutes(rs))
 
 def showPlot(points):
+    """Plot the given points."""
     plt.figure()
     fig, ax = plt.subplots()
     # this locator puts ticks at regular intervals
@@ -103,6 +116,8 @@ def showPlot(points):
     plt.plot(points)
 
 def collate_fn(batch):
+    """
+    Custom collate function to handle padding and batching of sequences."""
     # Sort by input sequence length (descending)
     batch.sort(key=lambda x: len(x[2]), reverse=True)
     

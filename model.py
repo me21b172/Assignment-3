@@ -8,7 +8,18 @@ from utils import devnagri2int
 EOS_TOKEN = "<EOS>"
 SOS_TOKEN = "<SOS>"
 class EncoderRNN(nn.Module):
+    """Encoder RNN module for sequence-to-sequence models."""
     def __init__(self, vocab_size, embed_size, hidden_size, num_layers, nonlinearity="tanh", dropout_p=0.1, layer="rnn"):
+        """
+        Args:
+            vocab_size (int): Size of the vocabulary.
+            embed_size (int): Size of the word embeddings.
+            hidden_size (int): Size of the hidden state.
+            num_layers (int): Number of layers in the RNN.
+            nonlinearity (str): Nonlinearity to use in RNN ('tanh' or 'relu').
+            dropout_p (float): Dropout probability.
+            layer (str): Type of RNN layer ('rnn', 'gru', or 'lstm').
+        """
         super(EncoderRNN, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
@@ -24,6 +35,11 @@ class EncoderRNN(nn.Module):
         self.dropout = nn.Dropout(dropout_p)
 
     def forward(self, input, input_lengths, hidden=None):
+        """
+        Args:
+            input (Tensor): Input tensor of shape (batch_size, max_seq_len).
+            input_lengths (Tensor): Lengths of the input sequences.
+            hidden (Tensor): Initial hidden state for RNN."""
         embedded = self.dropout(self.embedding(input))
         packed = nn.utils.rnn.pack_padded_sequence(
             embedded, input_lengths, batch_first=True, enforce_sorted=True
@@ -41,7 +57,17 @@ class EncoderRNN(nn.Module):
         return output, hidden, cell
     
 class BeamSearchNode:
+    """Node in the beam search tree."""
     def __init__(self, hidden_state, cell_state, prev_node, token_id, log_prob, length):
+        """
+        Args:
+            hidden_state (Tensor): Hidden state of the RNN.
+            cell_state (Tensor): Cell state of the LSTM (if applicable).
+            prev_node (BeamSearchNode): Previous node in the beam search tree.
+            token_id (int): ID of the token generated at this node.
+            log_prob (float): Log probability of the sequence up to this node.
+            length (int): Length of the sequence up to this node.
+        """
         self.hidden = hidden_state
         self.cell   = cell_state
         self.prev   = prev_node
@@ -57,7 +83,18 @@ class BeamSearchNode:
 
 
 class DecoderRNN(nn.Module):
+    """Decoder RNN module for sequence-to-sequence models."""
     def __init__(self,vocab_size,embed_size,hidden_size,num_layers=1,nonlinearity="tanh",layer="rnn",pad_token_id=0):
+        """
+        Args:
+            vocab_size (int): Size of the vocabulary.
+            embed_size (int): Size of the word embeddings.
+            hidden_size (int): Size of the hidden state.
+            num_layers (int): Number of layers in the RNN.
+            nonlinearity (str): Nonlinearity to use in RNN ('tanh' or 'relu').
+            layer (str): Type of RNN layer ('rnn', 'gru', or 'lstm').
+            pad_token_id (int): Padding token ID.
+        """
         super().__init__()
         self.hidden_size  = hidden_size
         self.num_layers   = num_layers
@@ -80,6 +117,15 @@ class DecoderRNN(nn.Module):
 
 
     def forward(self,encoder_outputs,encoder_hidden,encoder_cell, target_tensor=None,MAX_LENGTH=None,teacher_forcing_prob=0.5,beam_width=5):
+        """
+        Args:
+            encoder_outputs (Tensor): Output from the encoder.
+            encoder_hidden (Tensor): Hidden state from the encoder.
+            encoder_cell (Tensor): Cell state from the encoder (if applicable).
+            target_tensor (Tensor): Target tensor for training.
+            MAX_LENGTH (int): Maximum length of the output sequence.
+            teacher_forcing_prob (float): Probability of using teacher forcing.
+            beam_width (int): Width of the beam search."""
         B = encoder_outputs.size(0)
         device = encoder_outputs.device
 
@@ -93,6 +139,7 @@ class DecoderRNN(nn.Module):
 
         # 2) training branch
         if target_tensor is not None:
+            """Training with partial teacher forcing."""
             T = target_tensor.size(1)
             input_tok = torch.full((B, 1),
                                    devnagri2int[SOS_TOKEN],
@@ -122,6 +169,7 @@ class DecoderRNN(nn.Module):
 
         # 3) inference with **batched** beam search
         else:
+            """Inference with batched beam search."""
             K = beam_width
             V = self.vocab_size
             max_len = MAX_LENGTH or 30
@@ -208,7 +256,17 @@ class DecoderRNN(nn.Module):
         
 
 class BeamSearchNode:
+    """Node in the beam search tree."""
     def __init__(self, hidden_state, cell_state, prev_node, token_id, log_prob, length):
+        """
+        Args:
+            hidden_state (Tensor): Hidden state of the RNN.
+            cell_state (Tensor): Cell state of the LSTM (if applicable).
+            prev_node (BeamSearchNode): Previous node in the beam search tree.
+            token_id (int): ID of the token generated at this node.
+            log_prob (float): Log probability of the sequence up to this node.
+            length (int): Length of the sequence up to this node.
+        """
         self.hidden = hidden_state
         self.cell   = cell_state
         self.prev   = prev_node
@@ -224,13 +282,22 @@ class BeamSearchNode:
 
 
 class BahdanauAttention(nn.Module):
+    """Bahdanau attention mechanism."""
     def __init__(self, hidden_size):
+        """
+        Args:
+            hidden_size (int): Size of the hidden state.
+        """
         super().__init__()
         self.Wa = nn.Linear(hidden_size, hidden_size, bias=False)
         self.Ua = nn.Linear(hidden_size, hidden_size, bias=False)
         self.Va = nn.Linear(hidden_size, 1)
 
     def forward(self, decoder_hidden, encoder_outputs):
+        """
+        Args:
+            decoder_hidden (Tensor): Hidden state of the decoder.
+            encoder_outputs (Tensor): Output from the encoder."""
         h = decoder_hidden[0] if isinstance(decoder_hidden, tuple) else decoder_hidden
         query = h[-1].unsqueeze(1)  # (B, 1, H)
         energy = torch.tanh(self.Wa(query) + self.Ua(encoder_outputs))  # (B, T, H)
@@ -241,6 +308,7 @@ class BahdanauAttention(nn.Module):
 
 
 class AttnDecoderRNN(nn.Module):
+    """Attention-based decoder RNN module for sequence-to-sequence models."""
     def __init__(self, vocab_size, embed_size, hidden_size,
                  num_layers=1, nonlinearity="tanh", layer="lstm", pad_token_id=0):
         super().__init__()
@@ -263,6 +331,15 @@ class AttnDecoderRNN(nn.Module):
     def forward(self, encoder_outputs, encoder_hidden, encoder_cell=None,
                 target_tensor=None, MAX_LENGTH=None, teacher_forcing_prob=0.5,
                 beam_width=5):
+        """
+        Args:
+            encoder_outputs (Tensor): Output from the encoder.
+            encoder_hidden (Tensor): Hidden state from the encoder.
+            encoder_cell (Tensor): Cell state from the encoder (if applicable).
+            target_tensor (Tensor): Target tensor for training.
+            MAX_LENGTH (int): Maximum length of the output sequence.
+            teacher_forcing_prob (float): Probability of using teacher forcing.
+            beam_width (int): Width of the beam search."""
         B, T_enc, _ = encoder_outputs.size()
         device = encoder_outputs.device
         # init decoder state
@@ -300,6 +377,7 @@ class AttnDecoderRNN(nn.Module):
 
         # INFERENCE with batched beam search
         else:
+            """Inference with batched beam search."""
             K = beam_width
             max_len = MAX_LENGTH or 30
             sos = devnagri2int[SOS_TOKEN]; eos = devnagri2int[EOS_TOKEN]
