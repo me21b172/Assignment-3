@@ -4,22 +4,25 @@ import torch
 from torch.utils.data import DataLoader
 from utils import collate_fn, LangDataset,devnagri2int,latinList2int
 from model import EncoderRNN, DecoderRNN, AttnDecoderRNN
-from train import train
+from train import train_model
 
+SEED = 42
+g = torch.Generator()
+g.manual_seed(SEED)
 def sweep_config(best_config=False):
     """Define the configuration for hyperparameter sweep"""
     base_params = {
-        "embed_size": {"values": [128, 256, 512]},
-        "num_layers": {"values": [2, 3, 4]},
-        "layer": {"values": ["lstm", "rnn", "gru"]},
-        "hidden_size": {"values": [128, 256, 512]},
+        "embed_size": {"values": [256, 512]},
+        "num_layers": {"values": [ 3, 4]},
+        "layer": {"values": ["lstm", "gru"]},
+        "hidden_size": {"values": [256, 512]},
         "batch_size": {"values": [32, 64]},
-        "learning_rate": {"values": [1e-4, 1e-3, 1e-2]},
-        "dropout_p": {"values": [0.3, 0.4, 0.5]},
+        "learning_rate": {"values": [5e-3, 1e-3, 1e-2]},
+        "dropout_p": {"values": [0.1, 0.3]},
         "activation": {"values": ["tanh"]},
-        "teacher_forcing_prob": {"values": [0.5, 0.7, 0.9]},
-        "beam_width": {"values": [1, 2, 4]},
-        "num_epochs": {"values": [6]}
+        "teacher_forcing_prob": {"values": [ 0.8, 0.9, 0.99]},
+        "beam_width": {"values": [4, 5]},
+        "num_epochs": {"values": [4]}
     }
 
     if not best_config:
@@ -30,29 +33,46 @@ def sweep_config(best_config=False):
         }
     else:
         # Fix to best-known values
-        fixed = {k: {"values": [v["values"][-1]]} for k, v in base_params.items()}
+        best_params = {
+            "embed_size": {"values": [512]},
+            "num_layers": {"values": [3]},
+            "layer": {"values": ["lstm"]},
+            "hidden_size": {"values": [512]},
+            "batch_size": {"values": [64]},
+            "learning_rate": {"values": [1e-3]},
+            "dropout_p": {"values": [0.1]},
+            "activation": {"values": ["tanh"]},
+            "teacher_forcing_prob": {"values": [0.9]},
+            "beam_width": {"values": [5]},
+            "num_epochs": {"values": [6]}
+        }
         return {
             "method": "bayes",
-            "metric": {"name": "val_accuracy", "goal": "maximize"},
-            "parameters": fixed
+            "metric": {"name": "test_accuracy", "goal": "maximize"},
+            "parameters": best_params
         }
 
 
-def wandb_train(attention=False):
+def wandb_train(attention=False, best_config= False):
     """Main training function for a wandb run"""
     # Initialize wandb
     run = wandb.init()
     config = run.config
-
+    run = wandb.init()
+    config = run.config
+    run.name = f"Layer-{config.layer}-Batch-{config.batch_size}-LR-{config.learning_rate}-Dropout-{config.dropout_p}-Layers-{config.num_layers}-LayerType-{config.layer}-BeamWidth-{config.beam_width}"
+    run.save()
     # Set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Prepare data loaders using config.batch_size
-    train_dataset,val_dataset = LangDataset("train"),LangDataset("val")
+    dataset = "test" if best_config else "val"
+    print(dataset)
+    train_dataset,val_dataset = LangDataset("train"),LangDataset(dataset)
     train_loader = DataLoader(train_dataset, batch_size=config.batch_size,
-                              shuffle=True, collate_fn=collate_fn)
+                              shuffle=True, collate_fn=collate_fn, generator=g)
     val_loader = DataLoader(val_dataset, batch_size=config.batch_size,
-                            shuffle=False, collate_fn=collate_fn)
+                            shuffle=False, collate_fn=collate_fn, generator=g)
 
     # Instantiate models
     encoder = EncoderRNN(
@@ -63,7 +83,9 @@ def wandb_train(attention=False):
         layer=config.layer,
         dropout_p=config.dropout_p
     ).to(device)
+
     if attention:
+        print("YEs Attention!!")
         decoder = AttnDecoderRNN(
             vocab_size=len(devnagri2int),
             embed_size=config.embed_size,
@@ -81,21 +103,22 @@ def wandb_train(attention=False):
         ).to(device)
 
     # Call your training loop
-    train(train_loader, val_loader,encoder, decoder, 
+    train_model(train_loader, val_loader,encoder, decoder, 
           n_epochs=config.num_epochs, learning_rate=config.learning_rate,
           teacher_forcing_prob=config.teacher_forcing_prob,beam_width=config.beam_width,
-          print_every=1, plot_every=10,iswandb=True)
+          print_every=1, plot_every=10,iswandb=True,best_config=best_config,attention=attention)
     # train(train_dataloader, val_dataloader,encoder, decoder, n_epochs=2, learning_rate=0.001)
     # Finish wandb run
     run.finish()
 
 
-def run_sweep(args,sweep_id=None, best_config=False):
+def run_sweep(args,sweep_id=None):
     """Create or run a wandb sweep."""
     if args.wandb_sweeps:
         if sweep_id is None:
-            sweep_id = wandb.sweep(sweep_config(best_config), project="transliteration-sweep")
-        wandb.agent(sweep_id, function = lambda: wandb_train(args.attention), count=1 if best_config else 15)
+            print(f"best congif: {args.best_config}")
+            sweep_id = wandb.sweep(sweep_config(args.best_config), project="transliteration-sweep")
+        wandb.agent(sweep_id, function = lambda: wandb_train(args.attention,args.best_config), count=1 if args.best_config else 15)
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         train_dataset,val_dataset = LangDataset("train"),LangDataset("val")
@@ -130,15 +153,17 @@ def run_sweep(args,sweep_id=None, best_config=False):
             ).to(device)
 
     # Call your training loop
-    train(train_loader, val_loader,encoder, decoder, 
-          n_epochs=args.num_epochs, learning_rate=args.learning_rate,
-          teacher_forcing_prob=args.teacher_forcing_prob,beam_width=args.beam_width,
-          print_every=1, plot_every=10,iswandb=True)
+        train_model(train_loader, val_loader,encoder, decoder, 
+            n_epochs=args.num_epochs, learning_rate=args.learning_rate,
+            teacher_forcing_prob=args.teacher_forcing_prob,beam_width=args.beam_width,
+            print_every=1, plot_every=10,iswandb=True)
+        return encoder,decoder
 
 if __name__ == "__main__":
     # take arguments from command line
     parser = argparse.ArgumentParser(description="Run a wandb sweep for hyperparameter tuning.")
     parser.add_argument("--sweep_id", type=str, default=None, help="Sweep ID to run.")
+    parser.add_argument("--best_config", dest='best_config', action='store_true', help='runs sweep with best parameters')
     parser.add_argument('--attention', dest='attention', action='store_true', help='runs Attn Decoder')
     parser.add_argument('--wandb_sweeps', dest='wandb_sweeps', action='store_true', help='want wandb swweps to tune parameters?')
     parser.add_argument("--embed_size", type=int, default=256, help="Size of embedding vector")

@@ -8,6 +8,7 @@ import matplotlib.ticker as ticker
 import os
 import numpy as np
 import torch.nn as nn
+import random
 
 # Special tokens
 PAD_TOKEN = "<PAD>"
@@ -15,7 +16,33 @@ EOS_TOKEN = "<EOS>"
 SOS_TOKEN = "<SOS>"
 UNK_TOKEN = "<UNK>"
 
+SEED = 42  # or any fixed number you like
+torch.manual_seed(SEED)
+np.random.seed(SEED)
+random.seed(SEED)
+
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(SEED)
+    torch.cuda.manual_seed_all(SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+types = {"train":'hi.translit.sampled.train.tsv',"val":'hi.translit.sampled.dev.tsv',"test":"hi.translit.sampled.test.tsv"}
+with open(os.path.join("lexicons/",types["train"]), "r", encoding="utf-8") as f:
+    lines = f.readlines()
+train_data = np.array([[text.split("\t")[0],text.split("\t")[1][:-1]] for text in lines if not text.split("\t")[0] == '</s>'])
+with open(os.path.join("lexicons/",types["val"]), "r", encoding="utf-8") as f:
+    lines = f.readlines()
+val_data = np.array([[text.split("\t")[0],text.split("\t")[1][:-1]] for text in lines if not text.split("\t")[0] == '</s>'])
+with open(os.path.join("lexicons/",types["test"]), "r", encoding="utf-8") as f:
+    lines = f.readlines()
+test_data = np.array([[text.split("\t")[0],text.split("\t")[1][:-1]] for text in lines if not text.split("\t")[0] == '</s>'])
+test_data_point = np.array([["अनुज","anuj"],["निर्णयप्रक्रियेत","nirnayaprakriyet"]])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+merged_data = np.concatenate((train_data,val_data))
+
+
 class LangDataset(Dataset):
     def __init__(self,type:str):
         types = {"train":train_data,"val":val_data,"test":test_data, "test_ponit":test_data_point}
@@ -93,19 +120,5 @@ def collate_fn(batch):
             latin_tensors.to(device), devnagri_tensors.to(device),
             input_lengths, target_lengths)
 
- 
-types = {"train":'hi.translit.sampled.train.tsv',"val":'hi.translit.sampled.dev.tsv',"test":"hi.translit.sampled.test.tsv"}
-with open(os.path.join("lexicons/",types["train"]), "r", encoding="utf-8") as f:
-    lines = f.readlines()
-train_data = np.array([[text.split("\t")[0],text.split("\t")[1][:-1]] for text in lines if not text.split("\t")[0] == '</s>'])
-with open(os.path.join("lexicons/",types["val"]), "r", encoding="utf-8") as f:
-    lines = f.readlines()
-val_data = np.array([[text.split("\t")[0],text.split("\t")[1][:-1]] for text in lines if not text.split("\t")[0] == '</s>'])
-with open(os.path.join("lexicons/",types["test"]), "r", encoding="utf-8") as f:
-    lines = f.readlines()
-test_data = np.array([[text.split("\t")[0],text.split("\t")[1][:-1]] for text in lines if not text.split("\t")[0] == '</s>'])
-test_data_point = np.array([["अनुज","anuj"],["निर्णयप्रक्रियेत","nirnayaprakriyet"]])
-
-merged_data = np.concatenate((train_data,val_data))
-devnagri2int,latinList2int = {letter: idx for idx, letter in enumerate(set("".join(merged_data[:, 0])))},{letter: idx for idx, letter in enumerate(set("".join(merged_data[:, 1])))}
-int2devnagri,int2latinList = {idx: letter for letter, idx in devnagri2int.items()},{idx: letter for letter, idx in latinList2int.items()}
+devnagri2int, int2devnagri = create_mappings(set("".join(merged_data[:, 0])))
+latinList2int, int2latinList = create_mappings(set("".join(merged_data[:, 1])))

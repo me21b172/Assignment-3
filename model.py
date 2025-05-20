@@ -319,13 +319,16 @@ class AttnDecoderRNN(nn.Module):
             seqs[:,:,0] = sos
             input_tok = torch.full((B*K,), sos, dtype=torch.long, device=device)
             # time loop
+            all_attn = []
             for t in range(1, max_len):
                 emb = self.embedding(input_tok).unsqueeze(1)  # (B*K,1,E)
                 # attention per beam
                 h_layer = hidden.view(self.num_layers,B,K,self.hidden_size)[-1]
                 h_flat = h_layer.view(B*K,self.hidden_size).unsqueeze(0)
                 enc_flat = encoder_outputs.unsqueeze(1).repeat(1,K,1,1).view(B*K,T_enc,self.hidden_size)
-                context, _ = self.attention(h_flat, enc_flat)
+                context, attn_weights = self.attention(h_flat, enc_flat)
+                attn_w = attn_weights.squeeze()
+                all_attn.append(attn_w)
                 rnn_in = torch.cat([emb, context.view(B*K,1,self.hidden_size)], dim=2)
                 # RNN step
                 if self.layer=='lstm':
@@ -351,6 +354,20 @@ class AttnDecoderRNN(nn.Module):
                 seqs[:,:,t] = token_idx
                 input_tok = token_idx.view(B*K)
                 if (token_idx==eos).all(): break
-            best = scores.argmax(dim=-1)
-            preds = seqs[torch.arange(B,device=device),best]
-            return preds, None, None, None
+            # after the beam loop
+            best   = scores.argmax(dim=-1)
+            preds  = seqs[torch.arange(B, device=device), best]
+
+            # number of timesteps actually decoded
+            Tt     = len(all_attn)
+            # stack into (Tt, B*K, src_len)
+            stacked = torch.stack(all_attn, dim=0)
+            # permute to (B*K, Tt, src_len)
+            perm    = stacked.permute(1, 0, 2)
+            # reshape to (B, K, Tt, src_len)
+            attn_beams = perm.view(B, K, Tt, T_enc)
+            # select the top beam
+            attn_top1 = attn_beams[torch.arange(B, device=device), best, :, :]  # (B, Tt, T_enc)
+
+            return preds, None, None, attn_top1
+
