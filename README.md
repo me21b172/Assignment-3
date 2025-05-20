@@ -50,7 +50,7 @@ This is a character-level sequence-to-sequence model that learns to map Latin-sc
 
 * This file is responsible for the creation of datasets (which will be eventually be used by dataloaders)
 ### Wandb Report Link:
-https://wandb.ai/me21b172-indian-institute-of-technology-madras/transliteration-sweep/reports/Assignment-3--VmlldzoxMjgzNjUxMw
+https://api.wandb.ai/links/me21b172-indian-institute-of-technology-madras/2w3ailka
 
 ## How to Run
 Just run following command 
