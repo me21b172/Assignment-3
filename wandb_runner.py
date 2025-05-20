@@ -156,7 +156,7 @@ def run_sweep(args,sweep_id=None):
         train_model(train_loader, val_loader,encoder, decoder, 
             n_epochs=args.num_epochs, learning_rate=args.learning_rate,
             teacher_forcing_prob=args.teacher_forcing_prob,beam_width=args.beam_width,
-            print_every=1, plot_every=10,iswandb=True)
+            print_every=1, plot_every=10,iswandb=False)
         return encoder,decoder
 
 if __name__ == "__main__":
@@ -172,10 +172,10 @@ if __name__ == "__main__":
     parser.add_argument("--hidden_size", type=int, default=256, help="Size of hidden state")
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size")
     parser.add_argument("--learning_rate", type=float, default=1e-3, help="Learning rate")
-    parser.add_argument("--dropout_p", type=float, default=0.5, help="Dropout probability")
+    parser.add_argument("--dropout_p", type=float, default=0.1, help="Dropout probability")
     parser.add_argument("--activation", type=str, default="tanh", help="Activation function")
     parser.add_argument("--teacher_forcing_prob", type=float, default=0.5, help="Teacher forcing probability")
     parser.add_argument("--beam_width", type=int, default=1, help="Beam width for beam search")
-    parser.add_argument("--num_epochs", type=int, default=20, help="Number of epochs")
+    parser.add_argument("--num_epochs", type=int, default=1, help="Number of epochs")
     args = parser.parse_args()
     run_sweep(args=args)
